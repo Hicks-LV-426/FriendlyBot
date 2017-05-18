@@ -295,11 +295,11 @@
     {
       public Action Move(Ship source, Ship target, int cyborgs)
       {
-        Cost = cyborgs / (source.DistanceTo(target.Id) * target.Production);
-        Value = $"MOVE {source.Id} {target.Id} {cyborgs}";
         // population increase  turns cyborgs  =(turns+cyborgs)/((population/turns) + increase)
         // 0          3         10    15       3.333333333
         // 0          1         1     10       0.215686275
+        Cost = cyborgs / (source.DistanceTo(target.Id) * target.Production);
+        Value = $"MOVE {source.Id} {target.Id} {cyborgs}";
 
         return this;
       }
