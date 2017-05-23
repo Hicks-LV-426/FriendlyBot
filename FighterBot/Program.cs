@@ -364,6 +364,14 @@
         Production = production;
         Population = population;
         Owner = owner;
+        //Production	Distance	Value	Population		Frozen	
+        //1	1	1	10		10	0.1000
+        //1	5	1	10		50	0.0200
+
+        //Production	Distance	Value	Population		Frozen	
+        //1 1 1 10    10  0.1000
+        //1 5 1 10    50  0.0200
+
         return this;
       }
     }
