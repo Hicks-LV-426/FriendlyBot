@@ -111,6 +111,8 @@
     {
       Universe Universe { get; set; }
       Dictionary<int, Ship> Ships = new Dictionary<int, Ship>();
+      List<Action> DefensiveActions = new List<Action>();
+      List<Action> OffensiveActions = new List<Action>();
 
       public void Scan(Universe universe)
       {
@@ -132,6 +134,7 @@
 
       private void Defend()
       {
+        DefensiveActions.Clear();
         var needDefense = Ships.Where(s => s.Value.DefenseDeficit > 0).Select(sh => sh.Value);
         if (needDefense.Count() == 0) return;
 
@@ -140,18 +143,41 @@
           var defenders = Ships.Where(s => s.Value.ArmySize > 0).Select(s => s.Value).OrderBy(o => o.DistanceTo(ship.Id));
           foreach (var defender in defenders)
           {
-            defender.Defend(ship);
+            var action = defender.Defend(ship);
+
+            if (action != null) DefensiveActions.Add(action);
+            if (defender.DefenseDeficit == 0) break;
           }
         }
 
       }
       private void CalculateActions()
       {
-        throw new NotImplementedException();
+        OffensiveActions.Clear();
+        var army = Ships.Where(s => s.Value.ArmySize > 0).Select(v => v.Value);
+
+        foreach (var ship in army)
+        {
+          if (ship.CanUpgrade) OffensiveActions.Add(new Action().Upgrade(ship));
+
+          foreach (var d in ship.Distances)
+          {
+            var target = Universe.Factories[d.Key];
+            if (target.Owner == Owner.Player) continue;
+
+            var targetShip = new Ship(d.Key, Universe.Links).Update(target, Universe.Troops);
+            if (target.Owner == Owner.Neutral)
+              OffensiveActions.Add(new Action().Move(ship, targetShip, target.Cyborgs + 1));
+          }
+        }
       }
       private void ChooseActions()
       {
         throw new NotImplementedException();
+      }
+      private void GetTargets()
+      {
+        //
       }
 
       public void Execute()
@@ -166,6 +192,8 @@
     }
     class Ship
     {
+      const int MAX_PRODUCTION = 3;
+
       public Ship(int id, List<Link> links)
       {
         Id = id;
@@ -181,10 +209,12 @@
       public int FrozenTurnsRemaining { get; private set; }
       public bool Frozen => FrozenTurnsRemaining > 0;
       public int ArmySize { get; private set; }
-      List<Troop> IncommingTroops = new List<Troop>();
-      Dictionary<int, int> Distances = new Dictionary<int, int>();
+      public bool CanUpgrade => Production > MAX_PRODUCTION;
 
-      public void Update(Factory factory, List<Troop> troops)
+      public Dictionary<int, int> Distances = new Dictionary<int, int>();
+      List<Troop> IncommingTroops = new List<Troop>();
+
+      public Ship Update(Factory factory, List<Troop> troops)
       {
         Production = factory.Production;
         Population = factory.Cyborgs;
@@ -194,10 +224,13 @@
         IncommingTroops.AddRange(troops.Where(t => t.TargetFactoryId == Id));
 
         CalculateDefense();
+        return this;
       }
 
       private void CalculateDefense()
       {
+        DefenseDeficit = 0;
+        ArmySize = 0;
         var turn = 0;
         var population = Population;
         var army = 0;
@@ -243,9 +276,10 @@
         ArmySize = army;
       }
       public int DistanceTo(int factoryId) => Distances[factoryId];
-
       internal Action Defend(Ship ship)
       {
+        if (ship.DefenseDeficit == 0) return null;
+
         var cyborgs = ArmySize;
         if (ArmySize >= ship.DefenseDeficit) cyborgs = ArmySize - ship.DefenseDeficit;
 
@@ -295,16 +329,43 @@
     {
       public Action Move(Ship source, Ship target, int cyborgs)
       {
-        // population increase  turns cyborgs  =(turns+cyborgs)/((population/turns) + increase)
-        // 0          3         10    15       3.333333333
-        // 0          1         1     10       0.215686275
-        Cost = cyborgs / (source.DistanceTo(target.Id) * target.Production);
+        Cost = GetCost(cyborgs, source.DistanceTo(target.Id), target.Population, target.Production);
         Value = $"MOVE {source.Id} {target.Id} {cyborgs}";
 
         return this;
       }
+      public Action Upgrade(Ship source)
+      {
+        Cost = GetCost(10, 1, source.Population, source.Production + 1);
+        Value = $"INC {source.Id}";
+        return this;
+      }
       public decimal Cost { get; private set; }
       public string Value { get; private set; }
+      private decimal GetCost(int cyborgs, int turns, int population, int production)
+      {
+        return (cyborgs + turns) / ((population / turns) + production);
+      }
+    }
+    class Target
+    {
+      public int SourceFactoryId { get; set; }
+      public int TargetFactoryId { get; set; }
+      public int Distance { get; set; }
+      public int Production { get; set; }
+      public int Population { get; set; }
+      public Owner Owner { get; set; }
+      public decimal Value { get; set; }
+      public Target New(int sourceId, int targetId, int distance, int production, int population, Owner owner)
+      {
+        SourceFactoryId = sourceId;
+        TargetFactoryId = targetId;
+        Distance = distance;
+        Production = production;
+        Population = population;
+        Owner = owner;
+        return this;
+      }
     }
     public enum Owner
     {
