@@ -128,8 +128,8 @@
       public void Plan()
       {
         Defend();
-        CalculateActions();
-        ChooseActions();
+        CalculatePossibleMoves();
+        ChooseBestActions();
       }
 
       private void Defend()
@@ -151,27 +151,37 @@
         }
 
       }
-      private void CalculateActions()
+      private void CalculatePossibleMoves()
       {
         OffensiveActions.Clear();
+        var moves = new List<Move>();
+
         var army = Ships.Where(s => s.Value.ArmySize > 0).Select(v => v.Value);
 
         foreach (var ship in army)
         {
-          if (ship.CanUpgrade) OffensiveActions.Add(new Action().Upgrade(ship));
+          if (ship.CanUpgrade && ship.ArmySize > 10) moves.Add(new Move().Upgrade(ship.Id, ship.Production));
 
           foreach (var d in ship.Distances)
           {
+            // upgarde self
             var target = Universe.Factories[d.Key];
-            if (target.Owner == Owner.Player) continue;
 
-            var targetShip = new Ship(d.Key, Universe.Links).Update(target, Universe.Troops);
-            if (target.Owner == Owner.Neutral)
-              OffensiveActions.Add(new Action().Move(ship, targetShip, target.Cyborgs + 1));
+            // sent troops to upgrade
+            if (target.Owner == Owner.Player)
+            {
+              var support = Ships[d.Key];
+              if (support.CanUpgrade && support.ArmySize < 10) moves.Add(new Move().Support(ship.Id, support.Id, d.Value, support.Production));
+            }
+            else
+            {
+              if (target.Owner == Owner.Neutral)
+                OffensiveActions.Add(new Action().Move(ship, targetShip, target.Cyborgs + 1));
+            }
           }
         }
       }
-      private void ChooseActions()
+      private void ChooseBestActions()
       {
         throw new NotImplementedException();
       }
@@ -184,10 +194,6 @@
       {
         // Any valid action, such as "WAIT" or "MOVE source destination cyborgs"
         Console.WriteLine("WAIT");
-      }
-      private void AddMove(int sourceId, int targetId, int size)
-      {
-        //
       }
     }
     class Ship
@@ -278,7 +284,7 @@
       public int DistanceTo(int factoryId) => Distances[factoryId];
       internal Action Defend(Ship ship)
       {
-        if (ship.DefenseDeficit == 0) return null;
+        if (ship == null || ship == this || ship.DefenseDeficit == 0) return null;
 
         var cyborgs = ArmySize;
         if (ArmySize >= ship.DefenseDeficit) cyborgs = ArmySize - ship.DefenseDeficit;
@@ -329,51 +335,100 @@
     {
       public Action Move(Ship source, Ship target, int cyborgs)
       {
-        Cost = GetCost(cyborgs, source.DistanceTo(target.Id), target.Population, target.Production);
         Value = $"MOVE {source.Id} {target.Id} {cyborgs}";
 
         return this;
       }
       public Action Upgrade(Ship source)
       {
-        Cost = GetCost(10, 1, source.Population, source.Production + 1);
         Value = $"INC {source.Id}";
         return this;
       }
-      public decimal Cost { get; private set; }
       public string Value { get; private set; }
-      private decimal GetCost(int cyborgs, int turns, int population, int production)
-      {
-        return (cyborgs + turns) / ((population / turns) + production);
-      }
     }
-    class Target
+    class Move
     {
-      public int SourceFactoryId { get; set; }
-      public int TargetFactoryId { get; set; }
-      public int Distance { get; set; }
-      public int Production { get; set; }
-      public int Population { get; set; }
-      public Owner Owner { get; set; }
-      public decimal Value { get; set; }
-      public Target New(int sourceId, int targetId, int distance, int production, int population, Owner owner)
+      public int SourceFactoryId { get; private set; }
+      public int Distance { get; private set; }
+      public int AttackSize { get; private set; }
+      public int TargetFactoryId { get; private set; }
+      public int TargetProduction { get; private set; }
+      public decimal PriceToPerformanceRatio { get; private set; }
+      public int TargetPopulation { get; private set; }
+      public MoveType Type {get; private set;}
+
+      public Move Attack(int sourceId, int targetId, int distance, int attackSize, int targetProduction, int targetPopulation)
       {
         SourceFactoryId = sourceId;
-        TargetFactoryId = targetId;
         Distance = distance;
-        Production = production;
-        Population = population;
-        Owner = owner;
-        //Production	Distance	Value	Population		Frozen	
-        //1	1	1	10		10	0.1000
-        //1	5	1	10		50	0.0200
+        AttackSize = attackSize;
+        TargetFactoryId = targetId;
+        TargetProduction = targetProduction;
+        TargetPopulation = targetPopulation;
+        Type = MoveType.Attack;
 
-        //Production	Distance	Value	Population		Frozen	
-        //1 1 1 10    10  0.1000
-        //1 5 1 10    50  0.0200
-
+        PriceToPerformanceRatio = GetPPO();
         return this;
       }
+      public Move Upgrade(int sourceId, int production)
+      {
+        SourceFactoryId = sourceId;
+        TargetProduction = production;
+        Distance = 1;
+        AttackSize = 10;
+        Type = MoveType.Upgrade;
+
+        PriceToPerformanceRatio = GetPPO();
+        return this;
+      }
+      public Move Defense(int sourceId, int production, int distance, int targetPopulation, int deficit)
+      {
+        SourceFactoryId = sourceId;
+        TargetProduction = production;
+        TargetPopulation = targetPopulation;
+        Distance = distance;
+        AttackSize = deficit + 1;
+        Type = MoveType.Defense;
+
+        PriceToPerformanceRatio = GetPPO();
+        return this;
+      }
+      public Move Support(int sourceId, int targetId, int distance, int targetProduction)
+      {
+        SourceFactoryId = sourceId;
+        Distance = distance;
+        AttackSize = 10;
+        TargetFactoryId = targetId;
+        TargetProduction = targetProduction;
+        Type = MoveType.Support;
+
+        PriceToPerformanceRatio = GetPPO();
+        return this;
+      }
+
+      decimal GetPPO()
+      {
+        switch (Type)
+        {
+          case MoveType.Upgrade:
+            return TargetProduction + 1 / (Distance * AttackSize);
+          case MoveType.Attack:
+            return TargetProduction / ((Distance * AttackSize) + TargetPopulation);
+          case MoveType.Defense:
+            return TargetProduction + (TargetPopulation / Distance) / (Distance * AttackSize);
+          case MoveType.Support:
+            return TargetProduction / ((Distance + 1) * AttackSize);
+          default:
+            return 0;
+        }
+      }
+    }
+    public enum MoveType
+    {
+      Upgrade,
+      Attack,
+      Defense,
+      Support
     }
     public enum Owner
     {
