@@ -113,6 +113,7 @@
       Dictionary<int, Ship> Ships = new Dictionary<int, Ship>();
       List<Action> DefensiveActions = new List<Action>();
       List<Action> OffensiveActions = new List<Action>();
+      List<Move> Moves = new List<Move>();
 
       public void Scan(Universe universe)
       {
@@ -154,13 +155,13 @@
       private void CalculatePossibleMoves()
       {
         OffensiveActions.Clear();
-        var moves = new List<Move>();
+        Moves.Clear();
 
         var army = Ships.Where(s => s.Value.ArmySize > 0).Select(v => v.Value);
 
         foreach (var ship in army)
         {
-          if (ship.CanUpgrade && ship.ArmySize > 10) moves.Add(new Move().Upgrade(ship.Id, ship.Production));
+          if (ship.CanUpgrade && ship.ArmySize > 10) Moves.Add(new Move().Upgrade(ship.Id, ship.Production));
 
           foreach (var d in ship.Distances)
           {
@@ -171,25 +172,45 @@
             if (target.Owner == Owner.Player)
             {
               var support = Ships[d.Key];
-              if (support.CanUpgrade && support.ArmySize < 10) moves.Add(new Move().Support(ship.Id, support.Id, d.Value, support.Production));
+              if (support.CanUpgrade && support.ArmySize < 10) Moves.Add(new Move().Support(ship.Id, support.Id, d.Value, support.Production));
             }
             // attack
             else
             {
-              moves.Add(new Move().Attack(ship.Id, d.Key, d.Value, target.Cyborgs + 1, target.Production, target.Cyborgs));
+              Moves.Add(new Move().Attack(ship.Id, d.Key, d.Value, target.Cyborgs + 1, target.Production, target.Cyborgs));
             }
           }
         }
       }
-      private void ChooseBestMoves()
+      private void CalculateBestMoves()
       {
-        var attackShips = Ships.Where(s => s.Value.ArmySize > 0);
-        var armyTotal = attackShips.Sum(e => e.Value.ArmySize);
+        var attackShips = Ships.Select(s => s.Value).Where(s => s.ArmySize > 0).OrderByDescending(o => o.ArmySize);
+        var armyTotal = Ships.Where(s => s.Value.ArmySize > 0).Sum(e => e.Value.ArmySize);
         if (armyTotal == 0) return;
+        var ptprValue = 0M;
+
+        while (armyTotal > 0)
+        {
+          ptprValue = Moves.Min(m => m.PriceToPerformanceRatio);
+          var moves = Moves.Where(m => m.PriceToPerformanceRatio == ptprValue);
+
+          Moves.RemoveAll(r => r.PriceToPerformanceRatio == ptprValue);
+
+          foreach (var move in moves)
+          {
+          }
+        }
       }
+
+      private void AddOffensiveAction(Ship ship, int targetFactoryId, int attackSize)
+      {
+        ship.ArmySize -= attackSize;
+        OffensiveActions.Add(new Action().Move(ship.Id, targetFactoryId, attackSize));
+      }
+
       private void GetTargets()
       {
-        dd;
+        //
       }
 
       public void Execute()
@@ -216,7 +237,7 @@
       public int DefenseDeficit { get; private set; } = 0;
       public int FrozenTurnsRemaining { get; private set; }
       public bool Frozen => FrozenTurnsRemaining > 0;
-      public int ArmySize { get; private set; }
+      public int ArmySize { get; set; }
       public bool CanUpgrade => Production > MAX_PRODUCTION;
 
       public Dictionary<int, int> Distances = new Dictionary<int, int>();
@@ -346,6 +367,14 @@
         Value = $"INC {source.Id}";
         return this;
       }
+
+      internal Action Move(int sourceFactoryId, int targetFactoryId, int cyborgs)
+      {
+        Value = $"MOVE {sourceFactoryId} {targetFactoryId} {cyborgs}";
+
+        return this;
+      }
+
       public string Value { get; private set; }
     }
     class Move
@@ -357,7 +386,7 @@
       public int TargetProduction { get; private set; }
       public decimal PriceToPerformanceRatio { get; private set; }
       public int TargetPopulation { get; private set; }
-      public MoveType Type {get; private set;}
+      public MoveType Type { get; private set; }
 
       public Move Attack(int sourceId, int targetId, int distance, int attackSize, int targetProduction, int targetPopulation)
       {
