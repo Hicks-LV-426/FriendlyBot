@@ -129,7 +129,7 @@
       {
         Defend();
         CalculatePossibleMoves();
-        ChooseBestActions();
+        ChooseBestMoves();
       }
 
       private void Defend()
@@ -167,27 +167,29 @@
             // upgarde self
             var target = Universe.Factories[d.Key];
 
-            // sent troops to upgrade
+            // send support
             if (target.Owner == Owner.Player)
             {
               var support = Ships[d.Key];
               if (support.CanUpgrade && support.ArmySize < 10) moves.Add(new Move().Support(ship.Id, support.Id, d.Value, support.Production));
             }
+            // attack
             else
             {
-              if (target.Owner == Owner.Neutral)
-                OffensiveActions.Add(new Action().Move(ship, targetShip, target.Cyborgs + 1));
+              moves.Add(new Move().Attack(ship.Id, d.Key, d.Value, target.Cyborgs + 1, target.Production, target.Cyborgs));
             }
           }
         }
       }
-      private void ChooseBestActions()
+      private void ChooseBestMoves()
       {
-        throw new NotImplementedException();
+        var attackShips = Ships.Where(s => s.Value.ArmySize > 0);
+        var armyTotal = attackShips.Sum(e => e.Value.ArmySize);
+        if (armyTotal == 0) return;
       }
       private void GetTargets()
       {
-        //
+        dd;
       }
 
       public void Execute()
